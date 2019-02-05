@@ -1,0 +1,11 @@
+<html>
+<head>
+<meta charset='utf-8'>
+<title>ТЕМПЕРАТУРА</title>
+</head>
+<body>
+<table>
+{%TABLE%}
+</table>
+</body>
+</html>
