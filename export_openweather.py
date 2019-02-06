@@ -26,6 +26,8 @@ import json
 from subprocess import Popen, PIPE
 import sys
 import argparse
+import re
+
 
 def get_json():
     try:
@@ -47,10 +49,10 @@ def get_json():
 
 def put_json():
     arr = get_json()
-    print(arr)
+    #print(arr)
     try:
-        with open(ns.json+".json", "w") as f:
-            json.dump(arr, f)
+        with open(ns.json+".json", "w", encoding='utf-8') as f:
+            json.dump(arr, f, ensure_ascii=False)
         print(f"Создан файл JSON, {ns.json}.json ")
     except Exception as e:
         print('Ошибка записи JSON в файл', e)
@@ -63,19 +65,8 @@ def put_csv():
     title = [[i for i in arr[0]]]
     arr = [[v for k, v in x.items()] for x in arr]
     arr = title + arr
-    # не знаю я как заставить пайтон работать с албанским по этому извращаюсь
-    #'charmap' codec can't encode character '\u0101' in position 0: character maps to <undefined>
-    # начало извращений
-    arr = json.dumps(arr)
-    arr = arr.replace('[[','')
-    arr = arr.replace(']]', '')
-    arr = arr.replace('"', '')
-    line = arr.split('], [')
-    arr = [x.split(',') for x in line]
-    print(arr)
-    #конец извращений
     try:
-        with open(ns.csv+".csv", "w") as f:
+        with open(ns.csv+".csv", "w", encoding='utf-8') as f:
             wr = csv.writer(f, delimiter=',')
             for line in arr:
                 wr.writerow(line)
@@ -95,7 +86,7 @@ def put_html():
             sbhtml = f.read().strip()
         sbhtml = sbhtml.replace('{%TABLE%}',thm_line)
         try:
-            with open(ns.html+'.html', 'w') as f:
+            with open(ns.html+'.html', 'w', encoding='utf-8') as f:
                 f.writelines(sbhtml)
             print(f"Создан файл HTML, {ns.html}.html ")
         except Exception as e:
@@ -112,7 +103,6 @@ parser.add_argument ('--csv', nargs='?')
 parser.add_argument ('--html', nargs='?')
 parser.add_argument ('city', nargs='?')
 ns = parser.parse_args(sys.argv[1:])
-#print(ns)
 if ns.json != None:
     put_json()
 elif ns.csv != None:
