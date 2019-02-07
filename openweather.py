@@ -19,7 +19,9 @@ password= 123456
 #Дополнительно если нужно создать дб
 serverbd = mysql
 
-Логика проста пытаемся подключииться к базе если нет, то пытаемся подключиться к серверу и создать базу.
+Логика проста пытаемся подключииться к базе если нет, то пытаемся подключиться к серверу и создать базу если опять
+постигла неудача коннектимся к файлу database.db с помощью sqlite.
+Если мы хотим всегда работать с локальным файлом бд, то из конфига удаляем секцию [DB]
 Если база пустая создаем 2 таблицы
 city` 
     `id` id города
@@ -61,6 +63,7 @@ import json
 import requests
 import datetime
 import sys
+import sqlite3
 
 def tru_exit(mess, conn = False, mess2 = ""):
     if conn:
@@ -74,10 +77,19 @@ def tru_exit(mess, conn = False, mess2 = ""):
 
 def conf_pars():
     config = ConfigParser()
-    config.read('config.ini')
-    appid = config['API']['key']
-    if not appid: tru_exit("Ключ APPID должен быть указан в файле config.ini")
-    return appid, config['DB']
+    global is_mySQL
+    try:
+        config.read('config.ini')
+        appid = config['API']['key']
+        if not appid: tru_exit("Ключ APPID должен быть указан в файле config.ini")
+        try:
+            conf = config['DB']
+            return appid, config['DB']
+        except:
+            is_mySQL = False
+            return appid, connect_lsql()
+    except:
+        tru_exit("Проблеммы с файлом config.ini проверьте конфигурацию", conn=False)
 
 def creat_db(conn, config):
     cursor = conn.cursor()
@@ -88,18 +100,30 @@ def creat_db(conn, config):
     return conn
 
 
-def creat_tables(conn):
+def creat_tables(conn, flag):
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS `city` (`id` INT NOT NULL ,`name` VARCHAR(255) NOT NULL, `cid` VARCHAR(3) NOT NULL , PRIMARY KEY (`id`));")
+    cursor.execute("CREATE TABLE IF NOT EXISTS `city` (`id` INT NOT NULL ,`name` VARCHAR(255) NOT NULL, " \
+                   "`cid` VARCHAR(3) NOT NULL , PRIMARY KEY (`id`));")
     #print("... создали таблицу 'city'")
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS `wheather` (`id` INT NOT NULL AUTO_INCREMENT, "
-                   "`tid` INT NOT NULL, `wid` INT NOT NULL,`date` DATETIME NOT NULL,"
-                   " `tp` FLOAT NULL, `pic` VARCHAR(5), PRIMARY KEY (`id`));")
+    quer = "CREATE TABLE IF NOT EXISTS `wheather` (`id` INT NOT NULL AUTO_INCREMENT, " \
+           "`tid` INT NOT NULL, `wid` INT NOT NULL,`date` DATETIME NOT NULL, " \
+           "`tp` FLOAT NULL, `pic` VARCHAR(5), PRIMARY KEY (`id`));" if flag else "CREATE TABLE IF NOT EXISTS `wheather` " \
+                                                                                  "(`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL , " \
+           "`tid` INT NOT NULL, `wid` INT NOT NULL,`date` DATETIME NOT NULL, " \
+           "`tp` FLOAT NULL, `pic` VARCHAR(5));"
+    cursor.execute(quer)
     #print("... создали таблицу 'wheather'")
     conn.commit()
     cursor.close()
 
+
+def connect_lsql():
+    global is_mySQL
+    conn = sqlite3.connect("database.db")
+    creat_tables(conn, False)
+    is_mySQL = False
+    return conn
 
 def connect_db(config, serv = False):
     try:
@@ -113,7 +137,7 @@ def connect_db(config, serv = False):
                 if is_prn: print(f"...начинаем создание новой базы {config['database']}")
                 return creat_db(conn, config)
             else:
-                creat_tables(conn)
+                creat_tables(conn, True)
                 if is_prn: print(f"...успешно соеденились с базой данных {config['database']}")
                 return conn
         else:
@@ -125,11 +149,16 @@ def connect_db(config, serv = False):
                 if ans.lower() == 'y':
                     return connect_db(config, True)
                 else:
-                    tru_exit(f"!Не удалось подключиться к базе данных, проверьте настройки config.ini.\nОшибка: {e}")
+                    #tru_exit(f"!Не удалось подключиться к базе данных, проверьте настройки config.ini.\nОшибка: {e}")
+                    return connect_lsql()
             else:
-                tru_exit(f"!Не удалось подключиться к базе данных, проверьте настройки config.ini.\nОшибка: {e}")
+               #tru_exit(f"!Не удалось подключиться к базе данных, проверьте настройки config.ini.\nОшибка: {e}")
+               print("...подключение к серверу не удалось, проверьте настройки config.ini. ")
+               print("...работаем с локальной базой данных sqLite")
+               return connect_lsql()
         else:
-            tru_exit(f"!Не удалось подключиться к базе данных, проверьте настройки config.ini.\nОшибка: {e}", false, e)
+            #tru_exit(f"!Не удалось подключиться к базе данных, проверьте настройки config.ini.\nОшибка: {e}", false, e)
+            return connect_lsql()
 
 
 def get_json(par):
@@ -175,17 +204,18 @@ def get_country():
         rg = 200
         x = len(city) // rg
         for i in range(x):
-            cursor.executemany("INSERT INTO city(id,name,cid) VALUES(%s,%s,%s);", city[i * rg:(i + 1) * rg])
+            quer = "INSERT INTO city(id,name,cid) VALUES(%s,%s,%s);" if is_mySQL else "INSERT INTO city(id,name,cid) VALUES(?,?,?);"
+            cursor.executemany(quer, city[i * rg:(i + 1) * rg])
             conn.commit()
         if len(city[x * rg:]) > 0:
-            cursor.executemany("INSERT INTO city(id,name,cid) VALUES(%s,%s,%s);", city[x * rg:])
+            cursor.executemany(quer, city[x * rg:])
         conn.commit()
         cursor.close()
 
 
 def show_reg(par=''):
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM city where cid = 'Reg';")
+    cursor.execute("SELECT * FROM city where cid = 'ReG';")
     reg = cursor.fetchall()
     cursor.close()
     menu = [x[1] for x in reg]
@@ -202,13 +232,15 @@ def put_wd(data, par):
     for x in ins_arr:
         tid = x[0]
         try:
-            cursor.execute("SELECT id FROM wheather WHERE`tid` = %s AND `date` = %s;",(tid, data))
+            quer = "SELECT id FROM wheather WHERE`tid` = %s AND `date` = %s;" if is_mySQL else "SELECT id FROM wheather WHERE`tid` = ? AND `date` = ?;"
+            cursor.execute(quer,(tid, data))
         except:
             pass  # Я не знаю что тут и в похожих местах за исключение видимо какойто глюк mysql.connector  но тем не менее все работает
         rez = cursor.fetchone()
         if rez:
             try:
-                cursor.execute("UPDATE `wheather` SET `tp`=%s  WHERE (`id` = %s);", (x[3], rez[0]))
+                quer = "UPDATE `wheather` SET `tp`=%s  WHERE (`id` = %s);" if is_mySQL else "UPDATE `wheather` SET `tp`=?  WHERE (`id` = ?);"
+                cursor.execute(quer, (x[3], rez[0]))
                 conn.commit()
             except:
                 pass
@@ -220,7 +252,8 @@ def put_wd(data, par):
         pass
     if ins:
         cursor = conn.cursor()
-        cursor.executemany("INSERT INTO  wheather (`tid`, `wid`, `date`, `tp`, `pic`) VALUES (%s,%s,%s,%s,%s);", ins)
+        quer = "INSERT INTO  wheather (`tid`, `wid`, `date`, `tp`, `pic`) VALUES (%s,%s,%s,%s,%s);" if is_mySQL else "INSERT INTO  wheather (`tid`, `wid`, `date`, `tp`, `pic`) VALUES (?,?,?,?,?);"
+        cursor.executemany(quer, ins)
         conn.commit()
         cursor.close()
     return [x[:5] for x in arr]
@@ -243,7 +276,8 @@ def search_country(par=''):
             in_coun = f'%{in_coun}%'
             break
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM city WHERE  cid LIKE %s",(in_coun,))
+    quer = "SELECT * FROM city WHERE  cid LIKE %s" if is_mySQL else "SELECT * FROM city WHERE  cid LIKE ?"
+    cursor.execute(quer,(in_coun,))
     reg = cursor.fetchall()
     cursor.close()
     menu = [x[1] for x in reg]
@@ -256,10 +290,10 @@ def search_city(par=''):
     in_city = input("Введите название города либо часть названия (через / можно ввести двух буквенное обозначение страны для уточнения поиска) $>")
     in_city = in_city.split('/')
     if len(in_city) > 1:
-        quer = "SELECT * FROM city WHERE name LIKE %s AND cid LIKE %s"
+        quer = "SELECT * FROM city WHERE name LIKE %s AND cid LIKE %s" if is_mySQL else "SELECT * FROM city WHERE name LIKE ? AND cid LIKE ?"
         in_city = (f'%{in_city[0].strip()}%', f'%{in_city[1].strip()}%')
     else:
-        quer = "SELECT * FROM city WHERE name LIKE %s"
+        quer = "SELECT * FROM city WHERE name LIKE %s" if is_mySQL else "SELECT * FROM city WHERE name LIKE ?"
         in_city = (f'%{in_city[0].strip()}%',)
     cursor = conn.cursor()
     cursor.execute(quer, in_city)
@@ -307,7 +341,7 @@ def export_arr(par):
     data = datetime.date.today()
 
     if par:
-        quer = "SELECT * FROM city WHERE name LIKE %s"
+        quer = "SELECT * FROM city WHERE name LIKE %s" if is_mySQL else "SELECT * FROM city WHERE name LIKE ?"
         in_city = (f'%{par.strip()}%',)
         cursor = conn.cursor()
         cursor.execute(quer, in_city)
@@ -319,7 +353,8 @@ def export_arr(par):
         cursor = conn.cursor()
         for tid in par:
             try:
-                cursor.execute("SELECT * FROM wheather as A LEFT JOIN city as B ON (A.tid = B.id) WHERE A.`tid` = %s AND A.`date` = %s", (tid, data))
+                quer = "SELECT * FROM wheather as A LEFT JOIN city as B ON (A.tid = B.id) WHERE A.`tid` = %s AND A.`date` = %s" if is_mySQL else "SELECT * FROM wheather as A LEFT JOIN city as B ON (A.tid = B.id) WHERE A.`tid` = ? AND A.`date` = ?"
+                cursor.execute(quer, (tid, data))
             except:
                 pass # Я не знаю что тут и в похожих местах за исключение видимо какойто глюк mysql.connector  но тем не менее все работает
             rez = cursor.fetchone()
@@ -337,8 +372,8 @@ def export_arr(par):
     else:
         try:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM wheather as A LEFT JOIN city as B ON (A.tid = B.id) WHERE  A.`date` = %s;", (data,))
+            quer = "SELECT * FROM wheather as A LEFT JOIN city as B ON (A.tid = B.id) WHERE  A.`date` = %s;" if is_mySQL else "SELECT * FROM wheather as A LEFT JOIN city as B ON (A.tid = B.id) WHERE  A.`date` = ?;"
+            cursor.execute(quer, (data,))
             rez = cursor.fetchall()
             if rez:
                 arr = [{'id': x[1], 'name': x[7], 'country': x[8], 'temp':x[4], 'pic': x[5]} for x in rez]
@@ -356,8 +391,9 @@ def export_json(city = ''):
 
 #Начало работы
 is_prn = True if len(sys.argv) == 1 else False
+is_mySQL = True
 appid, conf = conf_pars()
-conn = connect_db(conf)
+conn = connect_db(conf) if is_mySQL else conf
 get_country()
 
 if is_prn:
